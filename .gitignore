@@ -1,4 +1,5 @@
 input/
 output/
 old_data/
+output_jwt/
 extracted_tokens.txt
