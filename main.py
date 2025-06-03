@@ -121,14 +121,28 @@ def main():
             csv_writer = csv.writer(csvfile)
             
             # Intestazione
-            csv_writer.writerow(['Username', 'Count'])
+            csv_writer.writerow(['External_ID', 'Farmacia', 'Conteggio'])
             
             # Dati ordinati per conteggio decrescente
             for username, count in username_counts.most_common():
-                csv_writer.writerow([username, count])
+                if "." in username:
+                    parti = username.split(".", 1)
+                    codice = parti[0]
+                    
+                    if re.fullmatch(r"F\d+", codice):
+                        descrizione = parti[1].replace(".", " ").upper()
+                    else:
+                        codice = None
+                        # Se il codice non è un codice F, usa l'intero username come descrizione
+                        descrizione = username.replace(".", " ").upper()
+                else:
+                    codice = None
+                    descrizione = username.upper()
+                
+                csv_writer.writerow([codice, descrizione, count])
             
             # Aggiungi il totale come ultima riga
-            csv_writer.writerow(['TOTAL', total_count])
+#            csv_writer.writerow(['TOTAL', total_count])
         
         print(f"Results have been saved to {output_file_path}")
     
