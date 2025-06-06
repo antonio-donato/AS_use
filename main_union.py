@@ -6,6 +6,7 @@ import re
 import os
 import glob
 import pandas as pd
+from collections import defaultdict
 
 # Percorso del file CSV da cui leggere
 
@@ -95,8 +96,10 @@ def main():
             found_tokens.update(matches)
 
     username_counts = Counter()
-    client_counts = Counter()
+    tenant_counts = Counter()
     line_number = 0
+    tenant_to_usernames = defaultdict(set)  # nuova struttura
+    username_to_tenant = dict()
     
     try:
         # Elaborazione del file di input
@@ -114,32 +117,36 @@ def main():
                 
                 # Estrai il nome utente dal payload del JWT
                 username = decode_jwt(line, part=2, field="user_name")
-                client_id = decode_jwt(line, part=2, field="client_id")
+                custom_info = decode_jwt(line, part=2, field="CustomInfo")
+                tenant_id = custom_info.get("tenantId") if custom_info else None
                 
-                # check = str(username)
-                # if check.find("barberis") != -1:
-                #     print(f"Found username with 'barberis': {check} in token: {line}")
-                #     breakpoint()
-                    
                 # Conta solo i nomi utente non vuoti
                 if username and username != "null":
                     username_counts[username] += 1
                     
-                if client_id and client_id != "null":
-                    client_counts[client_id] += 1
+                if tenant_id and tenant_id != "null":
+                    tenant_counts[tenant_id] += 1
+                    
+                # Mappa il tenant_id agli username associati
+                if username and username != "null" and tenant_id and tenant_id != "null":
+                    tenant_to_usernames[tenant_id].add(username)
+                    
+                    # Salva la mappatura inversa
+                    if username not in username_to_tenant:
+                        username_to_tenant[username] = tenant_id
+                    elif username_to_tenant[username] != tenant_id:
+                        print(f"Attenzione: lo username '{username}' è associato a più tenant!")
+
         
         print(f"Finished processing {line_number} lines")
-        
-        # Calcola il conteggio totale
-        # total_count = sum(username_counts.values())
-        # clients_count = sum(client_counts.values())
+        # print(f"Username trovati: {username_counts.counts()} \n Tenant trovati: {tenant_counts.counts()}")
         
         # Genera il file CSV
         with open(output_file_path, 'w', newline='') as csvfile:
             csv_writer = csv.writer(csvfile)
             
             # Intestazione
-            csv_writer.writerow(['External_ID', 'Farmacia', 'Conteggio'])
+            csv_writer.writerow(['Tenant_ID', 'Farmacia', 'Conteggio'])
             
             # Dati ordinati per conteggio decrescente
             for username, count in username_counts.most_common():
@@ -158,7 +165,7 @@ def main():
                     descrizione = username.upper()
                     
                 if descrizione != "DONANT" and descrizione != "DAVIDE GIUDICI":
-                    csv_writer.writerow([codice, descrizione, count])
+                    csv_writer.writerow([username_to_tenant.get(username), descrizione, count])
         
         print(f"Results have been saved to {output_file_path}")
     
