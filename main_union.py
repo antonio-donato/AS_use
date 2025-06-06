@@ -5,10 +5,13 @@ from collections import Counter
 import re
 import os
 import glob
+import pandas as pd
 
 # Percorso del file CSV da cui leggere
 
-output_file_path = "./output/username_counts_new.csv"
+output_file_path = "./output/username_counts.csv"
+input_folder = "./input_folder"
+input_file_path = "./input/csv_unito.csv"
 
 def decode_base64_url(encoded_str):
     """Converte base64url in base64 standard e decodifica"""
@@ -53,17 +56,31 @@ def decode_jwt(token, part=2, field=None):
         return None
 
 def main():
-    # Cerca un file .csv nella cartella ./input
-    input_folder = "./input"
+    
+    # Unisci tutti i file CSV in un unico file di output
+
+    # Trova tutti i file CSV nella cartella
     csv_files = glob.glob(os.path.join(input_folder, "*.csv"))
 
-    if not csv_files:
-        print(f"Nessun file CSV trovato nella cartella {input_folder}")
-        return
+    # Lista per contenere tutti i DataFrame
+    all_dfs = []
 
-    # Usa il primo file trovato
-    input_file = csv_files[0]
-    print(f"File selezionato: {input_file}")
+    # Legge tutti i file CSV e li aggiunge alla lista
+    for file in csv_files:
+        try:
+            df = pd.read_csv(file)
+            all_dfs.append(df)
+        except Exception as e:
+            print(f"Errore durante la lettura di {file}: {e}")
+
+    # Unisce tutti i DataFrame e rimuove i duplicati
+    if all_dfs:
+        combined_df = pd.concat(all_dfs).drop_duplicates()
+        combined_df.to_csv(input_file_path, index=False)
+        print(f"File unificato salvato in: {input_file_path}")
+    else:
+        print("Nessun file CSV trovato o leggibile.")
+        exit
 
     # Regex per trovare i token JWT (3 segmenti separati da punti)
     token_pattern = re.compile(r"eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+")
@@ -72,12 +89,11 @@ def main():
     found_tokens = set()
 
     # Legge e cerca i token riga per riga
-    with open(input_file, "r", encoding="utf-8") as f:
+    with open(input_file_path, "r", encoding="utf-8") as f:
         for line in f:
             matches = token_pattern.findall(line)
             found_tokens.update(matches)
 
-#    input_file_path = "./extracted_tokens.txt"
     username_counts = Counter()
     client_counts = Counter()
     line_number = 0
@@ -85,10 +101,7 @@ def main():
     try:
         # Elaborazione del file di input
         for token in found_tokens:
-#        with open(input_file_path, 'r') as file:
-#            for line in file:
                 line_number += 1
-#                line = line.strip()
                 line = token.strip()
                 
                 # Salta le righe vuote
@@ -103,6 +116,11 @@ def main():
                 username = decode_jwt(line, part=2, field="user_name")
                 client_id = decode_jwt(line, part=2, field="client_id")
                 
+                # check = str(username)
+                # if check.find("barberis") != -1:
+                #     print(f"Found username with 'barberis': {check} in token: {line}")
+                #     breakpoint()
+                    
                 # Conta solo i nomi utente non vuoti
                 if username and username != "null":
                     username_counts[username] += 1
@@ -113,8 +131,8 @@ def main():
         print(f"Finished processing {line_number} lines")
         
         # Calcola il conteggio totale
-        total_count = sum(username_counts.values())
-        clients_count = sum(client_counts.values())
+        # total_count = sum(username_counts.values())
+        # clients_count = sum(client_counts.values())
         
         # Genera il file CSV
         with open(output_file_path, 'w', newline='') as csvfile:
@@ -138,11 +156,9 @@ def main():
                 else:
                     codice = None
                     descrizione = username.upper()
-                
-                csv_writer.writerow([codice, descrizione, count])
-            
-            # Aggiungi il totale come ultima riga
-#            csv_writer.writerow(['TOTAL', total_count])
+                    
+                if descrizione != "DONANT" and descrizione != "DAVIDE GIUDICI":
+                    csv_writer.writerow([codice, descrizione, count])
         
         print(f"Results have been saved to {output_file_path}")
     

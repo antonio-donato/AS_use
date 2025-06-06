@@ -1,12 +1,8 @@
 import csv
 import re
-
-# File di input e output
-input_file = './input/z_lista_domande.csv'
-output_file = './output/domande_estratte.csv'
-
-# Stringhe chiave
-keywords = ["User Message: ", "Return value, user message plus compressed query: "]
+import glob
+import os
+import pandas as pd
 
 # Funzione per pulire il testo: rimuove codici ANSI e decodifica caratteri Unicode
 def clean_text(text):
@@ -20,6 +16,39 @@ def clean_text(text):
     except UnicodeDecodeError:
         pass  # in caso di errore, lascia il testo com'è
     return text
+
+# File di input e output
+input_folder = "./input_folder_question"
+input_file = "./input/lista_domande_unito.csv"
+output_file = './output/domande_estratte.csv'
+
+# Unisci tutti i file CSV in un unico file di output
+
+# Trova tutti i file CSV nella cartella
+csv_files = glob.glob(os.path.join(input_folder, "*.csv"))
+
+# Lista per contenere tutti i DataFrame
+all_dfs = []
+
+# Legge tutti i file CSV e li aggiunge alla lista
+for file in csv_files:
+    try:
+        df = pd.read_csv(file)
+        all_dfs.append(df)
+    except Exception as e:
+        print(f"Errore durante la lettura di {file}: {e}")
+
+# Unisce tutti i DataFrame e rimuove i duplicati
+if all_dfs:
+    combined_df = pd.concat(all_dfs).drop_duplicates()
+    combined_df.to_csv(input_file, index=False)
+    print(f"File unificato salvato in: {input_file}")
+else:
+    print("Nessun file CSV trovato o leggibile.")
+    exit
+
+# Stringhe chiave
+keywords = ["User Message: ", "Return value, user message plus compressed query: "]
 
 # Lista per salvare le domande estratte
 domande_estratte = []
