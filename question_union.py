@@ -26,6 +26,16 @@ output_file = './output/domande_estratte.csv'
 
 # Trova tutti i file CSV nella cartella
 csv_files = glob.glob(os.path.join(input_folder, "*.csv"))
+if not csv_files:
+    print("Nessun file CSV trovato nella cartella specificata.")
+    exit()
+    
+# Stampa i file trovati
+print(f"Lista dei file trovati nella cartella '{input_folder}':")
+for f in csv_files:
+    print(f" - {f}")
+print(f"Trovati {len(csv_files)} file CSV nella cartella '{input_folder}'.")
+print("Unendo i file...")
 
 # Lista per contenere tutti i DataFrame
 all_dfs = []
