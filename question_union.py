@@ -48,9 +48,15 @@ for file in csv_files:
     except Exception as e:
         print(f"Errore durante la lettura di {file}: {e}")
 
-# Unisce tutti i DataFrame e rimuove i duplicati
+# Conteggia i record totali prima della rimozione dei duplicati
 if all_dfs:
-    combined_df = pd.concat(all_dfs).drop_duplicates()
+    total_records = sum(len(df) for df in all_dfs)
+    print(f"Record totali prima della rimozione dei duplicati: {total_records}")
+    combined_df = pd.concat(all_dfs)
+    unique_records = len(combined_df.drop_duplicates())
+    duplicates = len(combined_df) - unique_records
+    print(f"Duplicati trovati e scartati: {duplicates}")
+    combined_df = combined_df.drop_duplicates()
     combined_df.to_csv(input_file, index=False)
     print(f"File unificato salvato in: {input_file}")
 else:
