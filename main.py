@@ -98,10 +98,21 @@ def main():
 
     # Mappa per conteggiare (tenant_id, descrizione, data)
     counts = Counter()
-    # Mappa username -> tenant_id
-    username_to_tenant = dict()
-    # Mappa username -> descrizione
-    username_to_descrizione = dict()
+    # Mappa tenant_id -> descrizione farmacia (caricata da tenant-descrizione.csv)
+    tenant_descrizione_path = os.path.join("./input", "tenant-descrizione.csv")
+    tenantid_to_descrizione = {}
+    try:
+        with open(tenant_descrizione_path, newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                try:
+                    key = int(row["id"].strip())
+                    descr = row["description"].strip()
+                    tenantid_to_descrizione[key] = descr
+                except Exception:
+                    continue
+    except Exception as e:
+        print(f"Errore durante la lettura di tenant-descrizione.csv: {e}")
 
     # Legge tutti i file CSV e processa riga per riga
     for file in csv_files:
@@ -114,8 +125,6 @@ def main():
                     data_str = row[0]
                     # Normalizza la data in formato GG/MM/AAAA
                     try:
-                        # Rimuovi eventuale parte oraria e normalizza
-                        # Gestione formato tipo 'Jun 5, 2025 @ 15:35:40.948'
                         match = re.search(r'(\w{3,}) (\d{1,2}), (\d{4})', data_str)
                         if match:
                             mese, giorno, anno = match.groups()
@@ -126,11 +135,9 @@ def main():
                             if pd.notnull(dt):
                                 data_str = dt.strftime('%d/%m/%Y')
                             else:
-                                # Prova a estrarre solo la parte di data se il parsing fallisce
                                 match = re.search(r'(\d{1,2})[\s/-](\w+)[\s/-](\d{4})', data_str)
                                 if match:
                                     giorno, mese, anno = match.groups()
-                                    # Gestione mese in lettere
                                     try:
                                         mese_num = pd.to_datetime(mese, format='%b').month
                                     except:
@@ -142,12 +149,9 @@ def main():
                     except Exception:
                         pass
                     for cell in row[1:]:
-                        # Cerca token JWT
                         matches = token_pattern.findall(cell)
                         for token in matches:
-                            username = decode_jwt(token, part=2, field="user_name")
                             client_id = decode_jwt(token, part=2, field="client_id")
-                            # Sostituzione client_id
                             if client_id == "askStellaStandalone":
                                 client_id_label = "Wingesfar"
                             elif client_id == "g3pAngularClient":
@@ -156,21 +160,12 @@ def main():
                                 client_id_label = client_id
                             custom_info = decode_jwt(token, part=2, field="CustomInfo")
                             tenant_id = custom_info.get("tenantId") if custom_info else None
-                            if username and username != "null" and tenant_id and tenant_id != "null":
-                                # Calcola descrizione
-                                if "." in username:
-                                    parti = username.split(".", 1)
-                                    codice = parti[0]
-                                    if re.fullmatch(r"F\d+", codice):
-                                        descrizione = parti[1].replace(".", " ").upper()
-                                    else:
-                                        descrizione = username.replace(".", " ").upper()
-                                else:
-                                    descrizione = username.upper()
-                                # Salva mapping
-                                username_to_tenant[username] = tenant_id
-                                username_to_descrizione[username] = descrizione
-                                
+                            if tenant_id and tenant_id != "null":
+                                try:
+                                    tenant_id_int = int(str(tenant_id).strip())
+                                except Exception:
+                                    tenant_id_int = None
+                                descrizione = tenantid_to_descrizione.get(tenant_id_int, "Sconosciuto")
                                 # Conta per chiave (tenant_id, descrizione, data)
                                 if descrizione != "DONANT" and descrizione != "DAVIDE GIUDICI":
                                     counts[(tenant_id, descrizione, data_str, client_id_label)] += 1
