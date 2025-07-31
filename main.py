@@ -146,6 +146,14 @@ def main():
                         matches = token_pattern.findall(cell)
                         for token in matches:
                             username = decode_jwt(token, part=2, field="user_name")
+                            client_id = decode_jwt(token, part=2, field="client_id")
+                            # Sostituzione client_id
+                            if client_id == "askStellaStandalone":
+                                client_id_label = "Wingesfar"
+                            elif client_id == "g3pAngularClient":
+                                client_id_label = "Stella"
+                            else:
+                                client_id_label = client_id
                             custom_info = decode_jwt(token, part=2, field="CustomInfo")
                             tenant_id = custom_info.get("tenantId") if custom_info else None
                             if username and username != "null" and tenant_id and tenant_id != "null":
@@ -162,19 +170,20 @@ def main():
                                 # Salva mapping
                                 username_to_tenant[username] = tenant_id
                                 username_to_descrizione[username] = descrizione
+                                
                                 # Conta per chiave (tenant_id, descrizione, data)
                                 if descrizione != "DONANT" and descrizione != "DAVIDE GIUDICI":
-                                    counts[(tenant_id, descrizione, data_str)] += 1
+                                    counts[(tenant_id, descrizione, data_str, client_id_label)] += 1
         except Exception as e:
             print(f"Errore durante la lettura di {file}: {e}")
 
     # Scrivi il file CSV di output ordinato per Farmacia e Data
-    rows = [ (tenant_id, descrizione, data_str, count) for (tenant_id, descrizione, data_str), count in counts.items() ]
+    rows = [ (tenant_id, descrizione, data_str, client_id, count) for (tenant_id, descrizione, data_str, client_id), count in counts.items() ]
     # Ordina per Farmacia (descrizione) e Data (convertita in datetime per ordinamento corretto)
     rows.sort(key=lambda x: (x[1], pd.to_datetime(x[2], format='%d/%m/%Y', errors='coerce')))
     with open(output_file_path, 'w', newline='') as csvfile:
         csv_writer = csv.writer(csvfile)
-        csv_writer.writerow(['Tenant_ID', 'Farmacia', 'Data', 'Conteggio'])
+        csv_writer.writerow(['Tenant_ID', 'Farmacia', 'Data', 'Client', 'Conteggio'])
         for row in rows:
             csv_writer.writerow(row)
     print(f"Results have been saved to {output_file_path}")
