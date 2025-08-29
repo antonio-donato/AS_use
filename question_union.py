@@ -15,6 +15,22 @@ def clean_text(text):
         text = text.encode('utf-8').decode('unicode_escape')
     except UnicodeDecodeError:
         pass  # in caso di errore, lascia il testo com'è
+
+    # Correzioni per caratteri mal decodificati (spesso dovuti a encoding mismatches)
+    # Ordine importante: sostituisci prima le sequenze più lunghe
+    replacements = {
+        'Ã¨': 'è',
+        'Ã²': 'ò',
+        'Ã¹': 'ù',
+        'Ã': 'à',
+        'Ã¬': 'ì',
+        'é': 'è',
+        'à©': 'è',
+    }
+    for k, v in replacements.items():
+        if k in text:
+            text = text.replace(k, v)
+
     return text
 
 # File di input e output
@@ -36,30 +52,52 @@ print(f"Trovati {len(csv_files)} file CSV nella cartella '{input_folder}'.")
 print("Unendo i file...")
 
 # Lista per contenere tutti i DataFrame
-all_dfs = []
+seen_rows = set()
+combined_rows = []
+header_row = None
+total_rows_read = 0
 
 # Legge tutti i file CSV e li aggiunge alla lista
 for file in csv_files:
     try:
-        df = pd.read_csv(file)
-        all_dfs.append(df)
+        with open(file, newline='', encoding='utf-8') as fh:
+            reader = csv.reader(fh)
+            first_row_in_file = True
+            for row in reader:
+                # conta righe (esclude header dalla conta dei record letti)
+                if first_row_in_file:
+                    # registra l'header dal primo file
+                    if header_row is None:
+                        header_row = tuple(row)
+                        # non contiamo l'header come record dati
+                    else:
+                        # se la prima riga del file corrente è identica all'header registrato,
+                        # la saltiamo come header; altrimenti la trattiamo come record dati
+                        if tuple(row) == header_row:
+                            first_row_in_file = False
+                            continue
+                    first_row_in_file = False
+                    continue
+
+                total_rows_read += 1
+                key = tuple(row)
+                if key not in seen_rows:
+                    seen_rows.add(key)
+                    combined_rows.append(row)
     except Exception as e:
         print(f"Errore durante la lettura di {file}: {e}")
 
-# Conteggia i record totali prima della rimozione dei duplicati
-if all_dfs:
-    total_records = sum(len(df) for df in all_dfs)
-    print(f"Record totali prima della rimozione dei duplicati: {total_records}")
-    combined_df = pd.concat(all_dfs)
-    unique_records = len(combined_df.drop_duplicates())
-    duplicates = len(combined_df) - unique_records
-    print(f"Duplicati trovati e scartati: {duplicates}")
-    combined_df = combined_df.drop_duplicates()
-    combined_df.to_csv(input_file, index=False)
-    print(f"File unificato salvato in: {input_file}")
-else:
-    print("Nessun file CSV trovato o leggibile.")
-    exit
+# Scrivi il file unificato rispettando l'header originale (se presente)
+with open(input_file, 'w', newline='', encoding='utf-8') as outfh:
+    writer = csv.writer(outfh)
+    if header_row is not None:
+        writer.writerow(list(header_row))
+    writer.writerows(combined_rows)
+
+duplicates = total_rows_read - len(combined_rows)
+print(f"Record totali letti (esclusi header): {total_rows_read}")
+print(f"Duplicati trovati e scartati: {duplicates}")
+print(f"File unificato salvato in: {input_file}")
 
 # Stringhe chiave
 keywords = ["User Message: ", "Return value, user message plus compressed query: "]
@@ -90,7 +128,8 @@ def extract_date_time_from_text(text):
         day = m.group(2)
         year = m.group(3)
         time = m.group(4)
-        date = f"{day} {month} {year}"
+        # restituisci la data nello stesso formato del file di input: 'Aug 29, 2025'
+        date = f"{month} {day}, {year}"
         return (date, time)
 
     # pattern con nomi dei mesi (es. 29 Aug 2025 o August 29, 2025)
@@ -122,6 +161,43 @@ def extract_date_time_from_text(text):
             break
     return (date, time)
 
+def extract_user_prompt_from_text(text):
+    """Estrae il valore associato a user_prompt in modo robusto anche con virgolette raddoppiate."""
+    if not text:
+        return None
+    s = text.replace('""', '"').replace("''", "'")
+    # cerca la parola user_prompt (case-insensitive)
+    idx = s.lower().find('user_prompt')
+    if idx == -1:
+        return None
+    # cerca il carattere ':' dopo user_prompt
+    colon = s.find(':', idx)
+    if colon == -1:
+        return None
+    # cerca la prima virgoletta dopo i due punti
+    # preferisci doppia virgoletta, poi singola
+    dq = s.find('"', colon)
+    sq = s.find("'", colon)
+    if dq == -1 and sq == -1:
+        # fallback usando regex per prendere fino a virgola o parentesi
+        m = _re.search(r'user_prompt\s*[:=]\s*([^,\)\}\n]+)', s, flags=_re.IGNORECASE)
+        if m:
+            return clean_text(m.group(1).strip().strip('"\''))
+        return None
+    # scegli il tipo di virgoletta più vicina
+    if dq == -1 or (sq != -1 and sq < dq):
+        start = sq + 1
+        quote_char = "'"
+    else:
+        start = dq + 1
+        quote_char = '"'
+    end = s.find(quote_char, start)
+    if end == -1:
+        # se non trovi la chiusura, prendi fino a parenth o fine stringa
+        end = len(s)
+    prompt = s[start:end].strip()
+    return clean_text(prompt)
+
 # Lista per salvare le domande estratte (now with date and time)
 domande_estratte = []
 
@@ -131,33 +207,75 @@ with open(input_file, newline='', encoding='utf-8') as csvfile:
     for row in reader:
         # unisci la riga in una stringa per facilitare la ricerca di data/ora
         row_text = ' '.join(cell for cell in row if cell)
-        for i, cell in enumerate(row):
-            for keyword in keywords:
-                if keyword in cell:
-                    split_text = cell.split(keyword)
-                    if len(split_text) > 1:
-                        domanda = split_text[1].strip()
-                        if domanda:
-                            domanda_pulita = clean_text(domanda)
-                            # prova ad estrarre data/ora dalla cella, poi dall'intera riga e infine dalle altre celle
-                            data = None
-                            ora = None
-                            search_texts = [cell, ' '.join(row), ' '.join(c for idx, c in enumerate(row) if idx != i)]
-                            for txt in search_texts:
-                                d, t = extract_date_time_from_text(txt)
-                                if d and not data:
-                                    data = d
-                                if t and not ora:
-                                    ora = t
-                                if data and ora:
-                                    break
-                            # se non trovata, lascia stringhe vuote
-                            domande_estratte.append([domanda_pulita, data or '', ora or ''])
 
-# Scrivi le domande estratte in un nuovo file CSV con intestazioni Data e Ora
+        # Primo tentativo: estrai Data/Ora dalla prima colonna se presente
+        data = None
+        ora = None
+        if len(row) > 0 and row[0]:
+            d0, t0 = extract_date_time_from_text(row[0])
+            if d0:
+                data = d0
+            if t0:
+                ora = t0
+
+        # Prova a estrarre la domanda dal campo user_prompt nella riga
+        domanda_pulita = None
+        # cerco prima nella riga completa
+        domanda_pulita = extract_user_prompt_from_text(row_text)
+        # se non trovata, cerca in ciascuna cella
+        if not domanda_pulita:
+            for cell in row:
+                domanda_pulita = extract_user_prompt_from_text(cell)
+                if domanda_pulita:
+                    break
+
+        # Se ancora non trovata, usa i keywords esistenti (fallback)
+        if not domanda_pulita:
+            for i, cell in enumerate(row):
+                for keyword in keywords:
+                    if keyword in cell:
+                        split_text = cell.split(keyword)
+                        if len(split_text) > 1:
+                            domanda = split_text[1].strip()
+                            if domanda:
+                                domanda_pulita = clean_text(domanda)
+                                # se Data/Ora non ancora trovati, prova a cercarli nella riga
+                                if not data or not ora:
+                                    d, t = extract_date_time_from_text(row_text)
+                                    if d and not data:
+                                        data = d
+                                    if t and not ora:
+                                        ora = t
+                                break
+                if domanda_pulita:
+                    break
+
+        # Se abbiamo una domanda valida, assicurati di avere Data/Ora provando diverse fonti
+        if domanda_pulita:
+            # se mancano dati, cerca in celle diverse dalla prima
+            if not data or not ora:
+                # priorità: cella con keyword (se identificata), poi riga completa, poi altre celle
+                d, t = extract_date_time_from_text(row_text)
+                if d and not data:
+                    data = d
+                if t and not ora:
+                    ora = t
+                # cerca nelle singole celle
+                for c in row:
+                    if (not data) or (not ora):
+                        d, t = extract_date_time_from_text(c)
+                        if d and not data:
+                            data = d
+                        if t and not ora:
+                            ora = t
+                    else:
+                        break
+            domande_estratte.append([data or '', ora or '', domanda_pulita])
+
+# Scrivi le domande estratte in un nuovo file CSV con intestazioni Data, Ora, Domanda
 with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
     writer = csv.writer(csvfile)
-    writer.writerow(['Domanda', 'Data', 'Ora'])  # intestazione
+    writer.writerow(['Data', 'Ora', 'Domanda'])  # intestazione nell'ordine richiesto
     writer.writerows(domande_estratte)
 
 print(f"Estratte {len(domande_estratte)} domande in '{output_file}'")
