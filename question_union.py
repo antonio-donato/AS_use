@@ -270,12 +270,18 @@ with open(input_file, newline='', encoding='utf-8') as csvfile:
                             ora = t
                     else:
                         break
-            domande_estratte.append([data or '', ora or '', domanda_pulita])
+            # estrai user_id dalla riga unificata (supporta user_id='...' oppure user_id=... senza virgolette)
+            user_id = ''
+            m = re.search(r"user_id\s*=\s*['\"]?([^'\" ,\)\}]+)['\"]?", row_text)
+            if m:
+                user_id = m.group(1)
 
-# Scrivi le domande estratte in un nuovo file CSV con intestazioni Data, Ora, Domanda
+            domande_estratte.append([data or '', ora or '', domanda_pulita, user_id])
+
+# Scrivi le domande estratte in un nuovo file CSV con intestazioni Data, Ora, Domanda, user_id
 with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
     writer = csv.writer(csvfile)
-    writer.writerow(['Data', 'Ora', 'Domanda'])  # intestazione nell'ordine richiesto
+    writer.writerow(['Data', 'Ora', 'Domanda', 'user_id'])  # intestazione nell'ordine richiesto
     writer.writerows(domande_estratte)
 
 print(f"Estratte {len(domande_estratte)} domande in '{output_file}'")

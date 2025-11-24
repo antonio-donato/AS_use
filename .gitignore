@@ -4,4 +4,7 @@ input_folder_question/
 output/
 old_data/
 output_jwt/
+dist/
+build/
 extracted_tokens.txt
+question_union.spec
